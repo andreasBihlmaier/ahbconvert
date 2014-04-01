@@ -119,11 +119,13 @@ class Link:
 class Joint:
   def __init__(self, joint_tag, prefix = ''):
     self.name = joint_tag.attrib['name']
-    if prefix:
-      self.name = prefix + '::' + self.name
     self.joint_type = joint_tag.attrib['type']
     self.child = joint_tag.find('child').text
     self.parent = joint_tag.find('parent').text
+    if prefix:
+      self.name = prefix + '::' + self.name
+      self.child = prefix + '::' + self.child
+      self.parent = prefix + '::' + self.parent
     self.pose = None
     self.axis = {}
 
