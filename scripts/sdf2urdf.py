@@ -23,6 +23,7 @@ class Link:
     pose = link_tag.find('pose')
     if pose != None:
       self.pose = pose.text
+
     inertial = link_tag.find('inertial')
     if inertial != None:
       pose = inertial.find('pose')
@@ -39,6 +40,7 @@ class Link:
           if coord_val != None:
             inertia_vals[coord] = coord_val.text
         self.inertial['inertia'] = inertia_vals
+
     for elem in 'collision', 'visual':
       elem_tag = link_tag.find(elem)
       if elem_tag != None:
@@ -63,7 +65,8 @@ class Link:
             geometry_vals['mesh'] = mesh_vals
           getattr(self, elem)['geometry'] = geometry_vals
 
-  def toUrdfSubElement(self, parent_tag, package):
+
+  def toUrdfSubElement(self, parent_tag):
     link_tag = ET.SubElement(parent_tag, 'link', {'name': self.name})
     for elem in 'collision', 'visual':
       if getattr(self, elem):
@@ -74,7 +77,7 @@ class Link:
         if 'geometry' in getattr(self, elem):
           geometry_tag = ET.SubElement(elem_tag, 'geometry')
           if 'mesh' in getattr(self, elem)['geometry']:
-            mesh_tag = ET.SubElement(geometry_tag, 'mesh', {'filename':  'package://' + package + '/' + '/'.join(getattr(self, elem)['geometry']['mesh']['uri'].split('/')[3:])})
+            mesh_tag = ET.SubElement(geometry_tag, 'mesh', {'filename':  'package://PATHTOMESHES/' + '/'.join(getattr(self, elem)['geometry']['mesh']['uri'].split('/')[3:])})
           if 'sphere' in getattr(self, elem)['geometry']:
             sphere_tag = ET.SubElement(geometry_tag, 'sphere', {'radius': getattr(self, elem)['geometry']['sphere']['radius']})
     if self.inertial:
@@ -90,6 +93,7 @@ class Link:
 
   def __repr__(self):
     return 'Link(name=%s, pose=%s, inertial=%s, collision=%s, visual=%s)' % (self.name, self.pose, str(self.inertial), str(self.collision), str(self.visual))
+
 
 
 
@@ -118,8 +122,31 @@ class Joint:
           limit_vals[elem] = elem_tag.text
       self.axis['limit'] = limit_vals
 
+
   def toUrdfSubElement(self, parent_tag):
-    print('TODO')
+    joint_tag = ET.SubElement(parent_tag, 'joint', {'name': self.name})
+    if self.joint_type == 'revolute' and 'limit' in self.axis and float(self.axis['limit']['lower']) == 0 and float(self.axis['limit']['upper']) == 0:
+      joint_tag.attrib['type'] = 'fixed'
+    else:
+      joint_tag.attrib['type'] = self.joint_type
+
+    parent_tag = ET.SubElement(joint_tag, 'parent', {'link': self.parent})
+    child_tag = ET.SubElement(joint_tag, 'child', {'link': self.child})
+
+    if self.pose:
+      xyz, rpy = pose2origin(self.pose)
+      origin_tag = ET.SubElement(joint_tag, 'origin', {'rpy': rpy, 'xyz': xyz})
+
+    if self.axis:
+      axis_tag = ET.SubElement(joint_tag, 'axis')
+      if 'xyz' in self.axis:
+        axis_tag.attrib['xyz'] = self.axis['xyz']
+    if 'limit' in self.axis and joint_tag.attrib['type'] != 'fixed':
+      limit_tag = ET.SubElement(joint_tag, 'limit')
+      for attrib in 'lower', 'upper', 'effort', 'velocity':
+        if attrib in self.axis['limit']:
+          limit_tag.attrib[attrib] = self.axis['limit'][attrib]
+
 
   def __repr__(self):
     return 'Joint(name=%s, type=%s, child=%s, parent=%s, axis=%s, pose=%s)' % (self.name, self.joint_type, self.child, self.parent, str(self.axis), self.pose)
@@ -128,8 +155,7 @@ class Joint:
 
 
 class Model:
-  def __init__(self, package):
-    self.package = package
+  def __init__(self):
     self.links = []
     self.joints = []
 
@@ -156,7 +182,7 @@ class Model:
   def save_urdf(self, urdf_filename):
     urdf = ET.Element('robot', {'name': self.name})
     for link in self.links:
-      link.toUrdfSubElement(urdf, self.package)
+      link.toUrdfSubElement(urdf)
     for joint in self.joints:
       joint.toUrdfSubElement(urdf)
 
@@ -170,11 +196,10 @@ class Model:
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument('sdf', help='SDF file to convert')
-  parser.add_argument('urdf_package', help='Name of package where model ressources (e.g. meshes) are located')
   parser.add_argument('urdf', help='Resulting URDF file to be written')
   args = parser.parse_args()
 
-  model = Model(args.urdf_package)
+  model = Model()
   model.load_sdf(args.sdf)
   print('Parsed SDF model:\n' + str(model))
   model.save_urdf(args.urdf)
