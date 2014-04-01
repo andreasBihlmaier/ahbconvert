@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import os
 import argparse
 import xml.etree.ElementTree as ET
 import xml.dom.minidom
@@ -13,8 +14,10 @@ def pose2origin(pose):
   return xyz, rpy
 
 class Link:
-  def __init__(self, link_tag):
+  def __init__(self, link_tag, prefix = ''):
     self.name = link_tag.attrib['name']
+    if prefix:
+      self.name = prefix + '::' + self.name
     self.pose = None
     self.inertial = {}
     self.collision = {}
@@ -55,6 +58,15 @@ class Link:
           if sphere != None:
             radius = sphere.find('radius')
             geometry_vals['sphere'] = {'radius': radius.text}
+          cylinder = geometry.find('cylinder')
+          if cylinder != None:
+            radius = cylinder.find('radius')
+            length = cylinder.find('length')
+            geometry_vals['cylinder'] = {'radius': radius.text, 'length': length.text}
+          box = geometry.find('box')
+          if box != None:
+            size = box.find('size')
+            geometry_vals['box'] = {'size': size.text}
           mesh = geometry.find('mesh')
           if mesh != None:
             uri = mesh.find('uri')
@@ -80,16 +92,23 @@ class Link:
             mesh_tag = ET.SubElement(geometry_tag, 'mesh', {'filename':  'package://PATHTOMESHES/' + '/'.join(getattr(self, elem)['geometry']['mesh']['uri'].split('/')[3:])})
           if 'sphere' in getattr(self, elem)['geometry']:
             sphere_tag = ET.SubElement(geometry_tag, 'sphere', {'radius': getattr(self, elem)['geometry']['sphere']['radius']})
+          if 'cylinder' in getattr(self, elem)['geometry']:
+            cylinder_tag = ET.SubElement(geometry_tag, 'cylinder', {'radius': getattr(self, elem)['geometry']['cylinder']['radius'], 'length': getattr(self, elem)['geometry']['cylinder']['length']})
+          if 'box' in getattr(self, elem)['geometry']:
+            box_tag = ET.SubElement(geometry_tag, 'box', {'size': getattr(self, elem)['geometry']['box']['size']})
     if self.inertial:
       inertial_tag = ET.SubElement(link_tag, 'inertial')
       mass_tag = ET.SubElement(inertial_tag, 'mass', {'value': self.inertial['mass']})
       if 'pose' in self.inertial:
         xyz, rpy = pose2origin(self.inertial['pose'])
         origin_tag = ET.SubElement(inertial_tag, 'origin', {'rpy': rpy, 'xyz': xyz})
-      if 'inertia' in self.inertial:
-        inertia_tag = ET.SubElement(inertial_tag, 'inertia')
-        for coord in 'ixx', 'ixy', 'ixz', 'iyy', 'iyz', 'izz':
-          inertia_tag.attrib[coord] = self.inertial['inertia'].get(coord, '0')
+      inertia_tag = ET.SubElement(inertial_tag, 'inertia')
+      for coord in 'ixx', 'ixy', 'ixz', 'iyy', 'iyz', 'izz':
+        if 'inertia' in self.inertial:
+          inertia = self.inertial['inertia']
+        else:
+          inertia = {}
+        inertia_tag.attrib[coord] = inertia.get(coord, '0')
 
   def __repr__(self):
     return 'Link(name=%s, pose=%s, inertial=%s, collision=%s, visual=%s)' % (self.name, self.pose, str(self.inertial), str(self.collision), str(self.visual))
@@ -98,8 +117,10 @@ class Link:
 
 
 class Joint:
-  def __init__(self, joint_tag):
+  def __init__(self, joint_tag, prefix = ''):
     self.name = joint_tag.attrib['name']
+    if prefix:
+      self.name = prefix + '::' + self.name
     self.joint_type = joint_tag.attrib['type']
     self.child = joint_tag.find('child').text
     self.parent = joint_tag.find('parent').text
@@ -158,25 +179,36 @@ class Model:
   def __init__(self):
     self.links = []
     self.joints = []
+    self.models_path = os.path.expanduser('~/.gazebo/models/')
 
   def __repr__(self):
     return 'Model(name=%s,\n links=%s,\n joints=%s\n)' % (self.name, str(self.links), str(self.joints))
 
-  def load_sdf(self, sdf_filename):
+  def load_toplevel_sdf(self, sdf_filename):
     tree = ET.parse(sdf_filename)
     sdf = tree.getroot()
     model = sdf.findall('model')[0]
     self.name = model.attrib['name']
-    self.add_elements(sdf_filename)
+    self.load_sdf(sdf_filename)
 
-  def add_elements(self, sdf_filename):
+  def load_sdf(self, sdf_filename, model_prefix = ''):
     tree = ET.parse(sdf_filename)
     sdf = tree.getroot()
     model = sdf.findall('model')[0]
     for link in model.iter('link'):
-      self.links.append(Link(link))
+      self.links.append(Link(link, model_prefix))
     for joint in model.iter('joint'):
-      self.joints.append(Joint(joint))
+      self.joints.append(Joint(joint, model_prefix))
+    for include in model.iter('include'):
+      included_sdf_filename = include.find('uri').text.replace('model://', self.models_path) + os.path.sep + 'model.sdf'
+      name_tag = include.find('name')
+      if name_tag != None:
+        model_name = name_tag.text
+      else:
+        model_name = include.find('uri').text.replace('model://', '')
+      if model_prefix:
+        model_name = model_prefix + '::' + model_name
+      self.load_sdf(included_sdf_filename, model_name)
 
 
   def save_urdf(self, urdf_filename):
@@ -200,7 +232,7 @@ def main():
   args = parser.parse_args()
 
   model = Model()
-  model.load_sdf(args.sdf)
+  model.load_toplevel_sdf(args.sdf)
   print('Parsed SDF model:\n' + str(model))
   model.save_urdf(args.urdf)
 
