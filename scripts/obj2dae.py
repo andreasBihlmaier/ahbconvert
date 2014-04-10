@@ -187,7 +187,12 @@ for groupName in groups:
         indices.append(faceIndices['normal'])
   colladaTriangleSet = colladaGeometry.createTriangleSet(numpy.array(indices), colladaInputList, materialName)
   colladaGeometry.primitives.append(colladaTriangleSet)
-  colladaMaterialNodes.append(collada.scene.MaterialNode(materialName, colladaMaterials[materialName], inputs=[]))
+  if materialName in colladaMaterials:
+    colladaMaterial = colladaMaterials[materialName]
+  else:
+    print('Warning: material %s unknown. Using default material %s instead' % (materialName, defaultMaterialName))
+    colladaMaterial = colladaMaterials[defaultMaterialName]
+  colladaMaterialNodes.append(collada.scene.MaterialNode(materialName, colladaMaterial, inputs=[]))
 
 colladaGeometryNode = collada.scene.GeometryNode(colladaGeometry, colladaMaterialNodes)
 node = collada.scene.Node('mynode', children=[colladaGeometryNode])
