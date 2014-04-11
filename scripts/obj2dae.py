@@ -35,6 +35,7 @@ inputFile.seek(inputFileStart)
 
 vertices = []
 normals = []
+texcoords = []
 materials = {}
 defaultMaterialName = 'obj2daeDefaultMaterial'
 materials[defaultMaterialName] = { 'Kd': [0.6, 0.6, 0.6] }
@@ -46,6 +47,9 @@ for line in inputFile:
   if splitters[0] == 'v':
     vertex = [float(val) for val in splitters[1:]]
     vertices.append(vertex)
+  elif splitters[0] == 'vt':
+    texcoord = [float(val) for val in splitters[1:]]
+    texcoords.append(texcoord)
   elif splitters[0] == 'vn':
     normal = [float(val) for val in splitters[1:]]
     normals.append(normal)
@@ -93,6 +97,9 @@ for line in inputFile:
   elif splitters[0] == 'usemtl':
     materialName = splitters[1]
   elif splitters[0] == 'f':
+    if len(splitters[1:]) != 3:
+      print('Only triangles are supported, but found face with %d elements' % len(splitters) - 1)
+      sys.exit(1)
     face = []
     for faceElement in splitters[1:]:
       faceElementSplitters = faceElement.split('/')
@@ -102,7 +109,7 @@ for line in inputFile:
       if faceElementSplitters[0]:
         indices['vertex'] = int(faceElementSplitters[0]) - 1
       if faceElementSplitters[1]:
-        indices['texture'] = int(faceElementSplitters[1]) - 1
+        indices['texcoord'] = int(faceElementSplitters[1]) - 1
       if faceElementSplitters[2]:
         indices['normal'] = int(faceElementSplitters[2]) - 1
       face.append(indices)
@@ -110,10 +117,12 @@ for line in inputFile:
 if faces:
   groups[groupName] = { 'faces': faces, 'material': materialName }
 
-#print("vertices=", vertices)
-#print("normals=", normals)
-#print("materials=", materials)
-#print("groups=", groups)
+print("vertices(%d)=%s" % (len(vertices), vertices))
+print("texcoords(%d)=%s" % (len(texcoords), texcoords))
+print("normals(%d)=%s" % (len(normals), normals))
+print("materials(%d)=%s" % (len(materials), materials))
+print("groups(%d)=%s" % (len(groups), groups))
+
 
 if args.fuse:
   fusedGroups = {}
@@ -164,6 +173,9 @@ for materialName in materials:
 
 colladaVerticesSource = collada.source.FloatSource("vertices", numpy.array(vertices), ('X', 'Y', 'Z'))
 colladaSources = [colladaVerticesSource]
+if texcoords:
+  colladaTexcoordSource = collada.source.FloatSource("texcoords", numpy.array(texcoords), ('U', 'V'))
+  colladaSources.append(colladaTexcoordSource)
 if normals:
   colladaNormalSource = collada.source.FloatSource("normals", numpy.array(normals), ('X', 'Y', 'Z'))
   colladaSources.append(colladaNormalSource)
@@ -171,9 +183,15 @@ colladaGeometry = collada.geometry.Geometry(mesh, "geometry", "geometry", collad
 mesh.geometries.append(colladaGeometry)
 
 colladaInputList = collada.source.InputList()
-colladaInputList.addInput(0, 'VERTEX', "#vertices")
+offset = 0
+colladaInputList.addInput(offset, 'VERTEX', "#vertices")
+offset += 1
+if texcoords:
+  colladaInputList.addInput(offset, 'TEXCOORD', "#texcoords")
+  offset += 1
 if normals:
-  colladaInputList.addInput(1, 'NORMAL', "#normals")
+  colladaInputList.addInput(offset, 'NORMAL', "#normals")
+  offset += 1
 
 colladaMaterialNodes = []
 for groupName in groups:
@@ -183,6 +201,8 @@ for groupName in groups:
   for face in group['faces']:
     for faceIndices in face:
       indices.append(faceIndices['vertex'])
+      if texcoords:
+        indices.append(faceIndices['texcoord'])
       if normals:
         indices.append(faceIndices['normal'])
   colladaTriangleSet = colladaGeometry.createTriangleSet(numpy.array(indices), colladaInputList, materialName)
