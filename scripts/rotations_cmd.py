@@ -6,7 +6,7 @@ import numpy as np
 from tf.transformations import *
 import cmd
 import numbers
-from math import acos, sqrt
+from math import acos, sqrt, sin, cos
 
 
 
@@ -43,6 +43,21 @@ def rpy2homogeneous(rpy):
   RPY: [sx, sy, sz]
   """
   homogeneous = euler_matrix(rpy[0], rpy[1], rpy[2], 'rzyx')
+  return homogeneous
+
+
+def ax2homogeneous(axisangle):
+  """
+  Axis Angle: [ax, ay, az]
+  """
+  angle = vector_norm(axisangle)
+  ax, ay, az = [v/angle for v in axisangle]
+  s = sin(angle/2);
+  qx = ax * s;
+  qy = ay * s;
+  qz = az * s;
+  qw = cos(angle/2);
+  homogeneous = quaternion_matrix([qx, qy, qz, qw])
   return homogeneous
 
 
@@ -89,6 +104,25 @@ class RotationsCmd(cmd.Cmd):
     rpy = toFloat(args)
     print_all_representations(rpy2homogeneous(rpy))
 
+  def do_ax(self, line):
+    """
+    Axis Angle, accepted inputs:
+    > ax ay az
+    > [ax ay az]
+    > ax
+    ay
+    az
+    """
+    if not line:
+      args = []
+      while not len(args) == 3:
+        args_tmp = raw_input('ax> ')
+        args.extend(args_tmp.split())
+    else:
+      args = line.split()
+
+    ax = toFloat(args)
+    print_all_representations(ax2homogeneous(ax))
 
 
 
